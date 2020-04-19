@@ -3,6 +3,7 @@ package FileSystem;
 public class User_File extends File{
     public User_File(String name) {
         this.name = name;
+        this.setRights(1770);
     }
 
     @Override

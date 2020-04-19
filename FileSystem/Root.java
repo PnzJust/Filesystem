@@ -3,6 +3,7 @@ package FileSystem;
 // clasa singleton
 public class Root extends User{
     private static Root instance = null;
+    private Root(){};
     public static Root getInstance(){
         if(instance == null)
         {

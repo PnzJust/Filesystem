@@ -3,6 +3,7 @@ package FileSystem;
 public class Kernel_File extends File{
     public Kernel_File(String name) {
         this.name = name;
+        this.setRights(1000);
     }
 
     @Override

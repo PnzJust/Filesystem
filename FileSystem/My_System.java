@@ -77,6 +77,7 @@ public class My_System {
                     program.deleteDir(nume_director);
                     break;
                 case 0:
+                    program.finalizare();
                     break;
                 default:
                     System.out.println("Try again");
@@ -85,7 +86,7 @@ public class My_System {
             if (x == 0)
                 break;
         }
-        // asta e doar o demonstratie
-        program.creare_stergere();
+//        // asta e doar o demonstratie
+//        program.creare_stergere();
     }
 }
