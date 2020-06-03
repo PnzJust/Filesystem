@@ -4,6 +4,7 @@ import FileService.*;
 
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.sql.*;
 import java.util.*;
 
 public class Clasa_Serviciu {
@@ -14,58 +15,82 @@ public class Clasa_Serviciu {
     private Root root = Root.getInstance();
     private Main_Directory main_directory = Main_Directory.getInstance();
     private LinkedHashSet<Directory> all_directories = new LinkedHashSet<>(); //all dirs
+    final String url = "jdbc:mysql://localhost:3306/test?serverTimezone=UTC";
+    final String username = "root";
+    final String password = "";
 
     FileService_User  Service_User =  FileService_User.getInstance("users.csv");
     FileService_Group Service_Group =  FileService_Group.getInstance("groups.csv");
     FileService_File Service_Files =  FileService_File.getInstance("files.csv");
     FileService_Directory Service_Directory =  FileService_Directory.getInstance("directories.csv");
     FileService_Logs Service_Logs = FileService_Logs.getInstance("logs.csv");
+
     public Clasa_Serviciu(){
-        try {
+        try (Connection connection = DriverManager.getConnection(this.url, this.username, this.password);
+             Statement statement = connection.createStatement()){
             all_directories.add(main_directory);
             File I = new Kernel_File("I");
             main_directory.addFile(I);
 
-            // Citire Useri din fisier
-            for (String e: Service_User.getUsers()) {
-                User new_user = new User(e);
+            // Citire Useri din BD
+            String query = "SELECT * FROM test.users";
+            ResultSet resultSet = statement.executeQuery(query);
+            while (resultSet.next())
+            {
+                User new_user = new User(resultSet.getString("name"));
                 all_users.add(new_user);
                 all_users_name.add(new_user.getName());
             }
-            // Citire grupuri din fisier
-            for (String e: Service_Group.getGroups()) {
-                Group new_group = new Group(e.split(",")[0]);
-                for( int i=1; i<e.split(",").length ; i++)
+
+            // Citire grupuri din BD
+            query = "SELECT * FROM test.groups";
+            resultSet = statement.executeQuery(query);
+            while (resultSet.next())
+            {
+                String group_name = resultSet.getString("name");
+                Group new_group = new Group(group_name);
+                String group_query = "SELECT * FROM test.group_" + group_name;
+                Statement statement1 = connection.createStatement();
+                ResultSet querySet = statement1.executeQuery(group_query);
+                while(querySet.next())
                 {
+                    group_name = querySet.getString("name");
                     User new_user = null;
                     for (User user: all_users)
-                        if (user.getName().equals(e.split(",")[i]))
+                        if (user.getName().equals(group_name))
                             new_user = user;
                     if(new_user!=null)
                         new_group.addUser(new_user);
                     else
                     {
-                        new_user = new User(e.split(",")[i]);
+                        new_user = new User(group_name);
                         new_group.addUser(new_user);
                         all_users.add(new_user);
                         all_users_name.add(new_user.getName());
                     }
                 }
+
                 all_groups.add(new_group);
                 all_groups_name.add(new_group.getNume());
             }
-            // Citire directoare din fisier
-            for (String e: Service_Directory.getDirs())
-                this.createDir(e.split(",")[0],e.split(",")[1]);
-            // Citire fisiere din fisier
-            for (String e: Service_Files.getFiles())
-                this.createFile(e.split(",")[0],e.split(",")[1]);
-        }
-        catch (FileNotFoundException e){
-            System.out.println("Nu exista fisierul:\n" + e);
-        }
-        catch (IOException e){
-            System.out.println("Nu se poate citi din fisier:\n" + e);
+
+            // Citire directoare din BD
+            query = "SELECT * FROM test.dirs";
+            resultSet = statement.executeQuery(query);
+            while (resultSet.next())
+            {
+                this.createDir(resultSet.getString("name"), resultSet.getString("location"));
+            }
+            // Citire fisiere din BD
+            query = "SELECT * FROM test.files";
+            resultSet = statement.executeQuery(query);
+            while (resultSet.next())
+            {
+                this.createFile(resultSet.getString("name"), resultSet.getString("location"));
+            }
+        } catch (SQLException e) {
+            e.printStackTrace();
+            System.exit(1);
         }
     }
     public void addUser(String nume) {
@@ -76,9 +101,17 @@ public class Clasa_Serviciu {
         User nou = new User(nume);
         all_users.add(nou);
         all_users_name.add(nume);
-        try
+        try (Connection connection = DriverManager.getConnection(this.url, this.username, this.password);
+             Statement statement = connection.createStatement())
         {
+            String query = "INSERT INTO `test`.`users` (`name`) VALUES ('" + nume + "');";
+            statement.executeUpdate(query);
             Service_Logs.addEvent("S-a adaugat userul " + nume);
+        }
+        catch (SQLException e)
+        {
+            e.printStackTrace();
+            System.exit(1);
         }
         catch (IOException e)
         {
@@ -93,9 +126,21 @@ public class Clasa_Serviciu {
         Group nou = new Group(nume);
         all_groups.add(nou);
         all_groups_name.add(nume);
-        try
+        try (Connection connection = DriverManager.getConnection(this.url, this.username, this.password);
+             Statement statement = connection.createStatement())
         {
+            String query = "INSERT INTO `test`.`groups` (`name`) VALUES ('" + nume + "');";
+            statement.executeUpdate(query);
+            query = "CREATE TABLE `test`.`group_" + nume+ "` (" +
+                    "  `name` INT NOT NULL," +
+                    "  PRIMARY KEY (`name`));";
+            statement.executeUpdate(query);
             Service_Logs.addEvent("S-a adaugat fisierul " + nume);
+        }
+        catch (SQLException e)
+        {
+            e.printStackTrace();
+            System.exit(1);
         }
         catch (IOException e)
         {
@@ -104,30 +149,45 @@ public class Clasa_Serviciu {
     }
     public void moveUser(String user, String group){
         Group actual=null,urmator=null;
+        String nume_actual="", nume_urmator="";
         User X = null;
         for(Group grup:all_groups) {
             if (grup.getNume().equals(group)) {
                 urmator = grup;
+                nume_urmator = urmator.getNume();
             }
             for(User user1:grup.getUsers())
             {
                 if (user1.getName().equals(user)) {
                     actual = grup;
+                    nume_actual = grup.getNume();
                     X = user1;
                     break;
                 }
             }
         }
+        try (Connection connection = DriverManager.getConnection(this.url, this.username, this.password);
+             Statement statement = connection.createStatement())
+        {
         if (actual != null)
+        {
             actual.removeUser(X);
+            statement.executeUpdate("DELETE FROM `test`.`group_" +nume_actual + "` WHERE (`name` = '" + user + "');");
+        }
         if (X == null)
             X = new User(user);
         if (urmator != null)
-            urmator.addUser(X);
-
-        try
         {
-            Service_Logs.addEvent("S-a mutal userul " + user + " in grupul " + group);
+            urmator.addUser(X);
+            statement.executeUpdate("INSERT INTO `test`.`group_" + nume_urmator + "` (`name`) VALUES ('"+user+"');");
+        }
+
+        Service_Logs.addEvent("S-a mutal userul " + user + " in grupul " + group);
+        }
+        catch (SQLException e)
+        {
+            e.printStackTrace();
+            System.exit(1);
         }
         catch (IOException e)
         {
@@ -149,6 +209,7 @@ public class Clasa_Serviciu {
                 else
                     nou.addSubdirectory(n);
             }
+
         try
         {
             Service_Logs.addEvent("S-a creat directorul " + nume + " in " + locatie);
@@ -166,9 +227,18 @@ public class Clasa_Serviciu {
         }
         if (nou != null)
             nou.addFile(new User_File(nume));
-        try
+
+        try (Connection connection = DriverManager.getConnection(this.url, this.username, this.password);
+              Statement statement = connection.createStatement())
         {
+            String query = "INSERT INTO `test`.`files` (`name`,`location`) VALUES ('" + nume + "','" +locatie + "');";
+            statement.executeUpdate(query);
             Service_Logs.addEvent("S-a creat fisierul " + nume + " in " +locatie);
+        }
+        catch (SQLException e)
+        {
+            e.printStackTrace();
+            System.exit(1);
         }
         catch (IOException e)
         {
@@ -237,9 +307,17 @@ public class Clasa_Serviciu {
                 {
                     all_users_name.remove(e.getName());
                     all_users.remove(e);
-                    try
+                    try (Connection connection = DriverManager.getConnection(this.url, this.username, this.password);
+                         Statement statement = connection.createStatement())
                     {
+                        String query = "DELETE FROM `test`.`users` WHERE (`name` = '" +name + "');";
+                        statement.executeUpdate(query);
                         Service_Logs.addEvent("S-a sters userul " + name);
+                    }
+                    catch (SQLException exc)
+                    {
+                        exc.printStackTrace();
+                        System.exit(1);
                     }
                     catch (IOException x)
                     {
@@ -257,9 +335,19 @@ public class Clasa_Serviciu {
             {
                 all_groups_name.remove(e.getNume());
                 all_groups.remove(e);
-                try
+                try (Connection connection = DriverManager.getConnection(this.url, this.username, this.password);
+                     Statement statement = connection.createStatement())
                 {
+                    String query = "DELETE FROM `test`.`groups` WHERE (`name` = '" +name + "');";
+                    statement.executeUpdate(query);
+                    query = "DROP TABLE test.group_" + name + ";";
+                    statement.executeUpdate(query);
                     Service_Logs.addEvent("S-a sters grupul " + name);
+                }
+                catch (SQLException exc)
+                {
+                    exc.printStackTrace();
+                    System.exit(1);
                 }
                 catch (IOException x)
                 {
@@ -284,10 +372,17 @@ public class Clasa_Serviciu {
                         System.out.println(x.getName() + "-fisier");
                     return;
                 }
-                all_directories.remove(e);
-                try
+                try (Connection connection = DriverManager.getConnection(this.url, this.username, this.password);
+                     Statement statement = connection.createStatement())
                 {
+                    String query = "DELETE FROM `test`.`dirs` WHERE (`name` = '" +name + "');";
+                    statement.executeUpdate(query);
                     Service_Logs.addEvent("S-a sters directorul " + name);
+                }
+                catch (SQLException exc)
+                {
+                    exc.printStackTrace();
+                    System.exit(1);
                 }
                 catch (IOException x)
                 {
